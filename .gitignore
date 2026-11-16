@@ -1,0 +1,11 @@
+# Kuku's own content — never commit or publish (confidentiality)
+# raw outputs (prompts+responses, ranked results) are shared via the submission form
+input/
+outputs/
+prompts/
+data/
+
+# local clutter
+__pycache__/
+*.pyc
+.DS_Store

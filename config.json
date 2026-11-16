@@ -1,0 +1,33 @@
+{
+  "candidate_model": {
+    "backend": "file",
+    "name": "GLM-5.3-Flash (via ZCode session)",
+    "base_url": "",
+    "api_key_env": "",
+    "_swap_note": "To swap models, set backend='openai', base_url to an OpenAI-compatible endpoint, name to the model id, api_key_env to the env var holding the key. One edit, no code changes."
+  },
+  "judge_model": {
+    "backend": "file",
+    "name": "GLM-5.3-Flash (via ZCode session)",
+    "base_url": "",
+    "api_key_env": ""
+  },
+  "rules": {
+    "min_s": 20,
+    "max_s": 60,
+    "max_segments": 3,
+    "min_segment_s": 3.0,
+    "hook_window_s": 3.0,
+    "iou_dedupe": 0.5,
+    "max_per_episode": 2,
+    "target_top": 10,
+    "blind_top": 15
+  },
+  "weights": {
+    "hook_strength": 0.30,
+    "cliffhanger_strength": 0.25,
+    "standalone_clarity": 0.20,
+    "emotional_intensity": 0.15,
+    "spoiler_risk": -0.10
+  }
+}
