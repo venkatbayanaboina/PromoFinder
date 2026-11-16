@@ -207,7 +207,8 @@ def main() -> int:
     print(f"blocks:   {stats['total_blocks']} {type_counts}")
     print(f"unparsed: {len(all_unparsed)}")
     dur = stats["durations"]
-    print(f"durations: min {min(dur.values()):.2f}s max {max(dur.values()):.2f}s")
+    if dur:
+        print(f"durations: min {min(dur.values()):.2f}s max {max(dur.values()):.2f}s")
     expected = {"CAMERA": 1754, "ACTION": 372, "SOUND FX": 114, "DIALOGUE": 1487}
     ok = len(episodes) == 50 and stats["total_blocks"] == 3727 and not all_unparsed
     for k, v in expected.items():

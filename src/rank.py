@@ -50,7 +50,10 @@ def weighted_score(cand: dict, weights: dict) -> float:
 def dedupe(ranked: list) -> list:
     kept = []
     for c in ranked:  # already sorted by score desc
-        if any(overlaps(c, k) for k in kept):
+        # only compare same-kind clips: a cross-episode combo intentionally
+        # reuses segments from single-episode candidates, so single-vs-combo
+        # overlap is by construction and not a duplicate
+        if any(c["kind"] == k["kind"] and overlaps(c, k) for k in kept):
             c["deduped"] = True
             continue
         kept.append(c)
@@ -102,10 +105,11 @@ def main() -> int:
         if not line.strip():
             continue
         rec = json.loads(line)
+        cid = rec.get("cid") or rec.get("key", "").replace("judge-", "")
         try:
-            judge_scores[rec["cid"]] = extract_json(rec["response"])
+            judge_scores[cid] = extract_json(rec["response"])
         except Exception:
-            judge_scores[rec["cid"]] = {"error": "unparseable", "raw": rec["response"][:200]}
+            judge_scores[cid] = {"error": "unparseable", "raw": rec["response"][:200]}
 
     blind = {}
     blind_path = Path("prompts/blind_responses.jsonl")
@@ -114,10 +118,11 @@ def main() -> int:
             if not line.strip():
                 continue
             rec = json.loads(line)
+            cid = rec.get("cid") or rec.get("key", "").replace("blind-", "")
             try:
-                blind[rec["cid"]] = extract_json(rec["response"])
+                blind[cid] = extract_json(rec["response"])
             except Exception:
-                blind[rec["cid"]] = {"error": "unparseable"}
+                blind[cid] = {"error": "unparseable"}
 
     passed = [c for c in cands if c["pass"] and c["cid"] in judge_scores
               and "error" not in judge_scores[c["cid"]]]
