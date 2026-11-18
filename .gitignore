@@ -1,11 +1,26 @@
-# Kuku's own content — never commit or publish (confidentiality)
-# raw outputs (prompts+responses, ranked results) are shared via the submission form
-input/
-outputs/
-prompts/
-data/
+# Confidential Kuku source material
+data/input/
 
-# local clutter
+# Generated state and outputs
+data/processed/
+data/outputs/
+data/prompts/pending_requests.jsonl
+data/prompts/pending_requests.jsonl.tmp
+legacy/previous_pipeline/data/
+legacy/previous_pipeline/outputs/
+legacy/previous_pipeline/prompts/
+
+# Secrets and local environments
+.env
+.streamlit/secrets.toml
+.venv/
+venv/
+input/
+output/
+# Python and editor clutter
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.coverage
 .DS_Store

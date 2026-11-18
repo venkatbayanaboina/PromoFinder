@@ -1,85 +1,133 @@
-# Promo Finder — Kuku AI Generalist Assignment (Problem 1)
+# PromoFinder AI
 
-Reads timestamped microdrama screenplays and finds the best 20–60s promo
-clips to post on Instagram/TikTok/YouTube: each promo **opens on a hook**
-(something arresting in the first 3 seconds), **ends on a cliffhanger**
-(cuts at an unresolved moment), and **makes sense on its own** to someone
-who has never seen the show. Ranked shortlist goes to a human editor who
-approves the top N — the tool saves hours, it doesn't remove the editor.
+PromoFinder reads the timestamped Kuku screenplay TXT files, proposes at most
+one short promo per episode, checks the proposal against its source, and ranks
+only the promos that pass validation. The project keeps generation and ranking
+models in separate configuration slots so each can use a different model.
 
-Show used for this run: *I Married a Broken Soldier. He was a Duke*
-(episodes 1–50). The input pack is Kuku's own content — it is **not**
-included in this repo.
+This prototype follows the supplied architecture: Python, Pydantic, SQLite,
+JSON, configurable LLM calls, deterministic validation and ranking, a top 10
+shortlist, and an execution report. For this version, a promo can combine
+multiple segments from its own episode only.
 
-## How it works (staged pipeline: code for exactness, AI for judgment)
+## Install and run
 
-| Stage | Tool | What it does |
-|---|---|---|
-| 1. Parse | code | screenplay → scenes + timestamped blocks with stable IDs (`ep1:b014`) |
-| 2. Candidates | AI (cheap slot) | per episode: propose 20–60s clips **as block IDs, never timestamps** — invented cut points are impossible by design |
-| 3. Validate | code | resolve IDs → timestamps; enforce 20–60s, ≤3 segments, cuts on block boundaries, hook within 3s (auto-trims leading blocks if the AI put the hook late) |
-| 4. Score | AI (strong slot) | rubric: hook strength, cliffhanger strength, standalone clarity, emotional intensity (0–5), spoiler risk (0–5, penalized) + a blind "never saw the show" comprehension check on the top clips |
-| 5. Rank | code | dedupe overlapping clips (IoU), variety caps (≤2/episode, ≥1 episode-1 clip, ≥1 cross-episode combo), weighted score |
-| 6. Output | code | `outputs/`: JSON + CSV + markdown report + quality report; `prompts/` = unedited AI log |
-
-## Run it
+Python 3.9 or newer is required for the pipeline. The Streamlit interface
+requires Python 3.11 or newer.
 
 ```bash
-# 0. put episode .txt files under input/ (any folder depth)
-python3 -I src/run.py prepare    # parse + build candidate prompts
-# 1a. file backend (no key needed):
-#     fill prompts/raw/cand-ep-NN.response.json, then:
-python3 -I src/merge_responses.py
-python3 -I src/run.py mid        # validate + build season combo prompt
-#     fill prompts/raw/season-combos.response.json, then:
-python3 -I src/merge_responses.py
-# 1b. OR set backend="openai" in config.json and the calls go to the API directly
-python3 -I src/run.py judge      # build judge prompts → fill responses as above
-python3 -I src/run.py rank       # rank + reports (fills blind prompts, re-ranks)
+uv sync --extra dev --extra reports
+cp .env.example .env
 ```
 
-With `backend: "openai"`, steps 1a–1b collapse: the pipeline calls the model
-itself and writes the same prompt/response log.
+To include the Streamlit studio, use Python 3.11 or newer and install its
+optional dependency too:
 
-## Swap the model with one edit
-
-```jsonc
-// config.json
-"candidate_model": {
-  "backend": "openai",                // was "file"
-  "name": "gemini-2.0-flash",         // any model id
-  "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
-  "api_key_env": "GEMINI_API_KEY"     // env var holding the key
-}
+```bash
+uv sync --extra dev --extra reports --extra ui
+uv run streamlit run streamlit_app.py
 ```
 
-Works with OpenAI, Gemini's OpenAI-compatible endpoint, Groq, or any
-OpenAI-compatible endpoint Kuku provides. `judge_model` is a separate slot,
-so a cheap model can propose and a stronger model can judge.
+Place TXT screenplays under `data/input/` (subfolders are supported), then run:
 
-## Repo layout
-
-```
-config.json      model slots + rules/thresholds (one-line swap)
-src/             parse.py candidates.py validate.py score.py rank.py report.py llm.py merge_responses.py run.py
-prompts/         unedited AI log: every prompt and every response (raw outputs)
-outputs/         validated.jsonl, ranked_promos.json/.csv, promo_report.md, quality_report.md
-doc/             solution.pdf (≤2 pages)
-notebook/        Colab copy of the same pipeline
-input/           (not committed — Kuku's content)
+```bash
+uv run python -m promofinder.main
 ```
 
-## Assumptions (full list in the doc)
+Or install with pip and run from the project root:
 
-- Hook window = 3s per the brief; clip length = sum of segment durations (join gaps excluded).
-- Multi-segment promos ≤3 segments, each ≥3s; cross-episode combos allowed (the brief permits joining moments across episodes).
-- Screenplay timestamps are ground-truth screen time (no video to verify against).
-- Any block type can be the hook (a slap = ACTION, a sting = SOUND FX).
-- Speaker-name drift across episodes (LADY JULIANA→JULIANA, THE FORMER GROOM→GERALD, …) is canonicalized via an alias table in `src/parse.py`.
-- Deliverable = ranked shortlist (~10) for an editor.
+```bash
+pip install -e '.[dev,reports]'
+python -m promofinder.main
+```
 
-## What we'd do with more time
+The included screenplays are already in `data/input/`. That directory is
+excluded from Git because it contains source material.
 
-- Auto-build the actual clip files with ffmpeg once timestamps are approved.
-- A/B test hook styles against real view data to tune the rubric weights.
-- Learn per-show thresholds instead of the fixed 20–60s/hook-3s defaults.
+## Configure model APIs
+
+The Streamlit interface has no model selectors. Inference uses API routes loaded by
+[`src/promofinder/api_config.py`](src/promofinder/api_config.py). Set each route's provider,
+model ID, endpoint, and tuning values through the corresponding environment
+variables in `.env`; keep API keys there as well.
+
+Both routes default to OpenRouter's OpenAI-compatible API using
+`z-ai/glm-5.3-flash`. Set `LLM_KEY` in `.env`; the candidate and
+ranking routes share it unless you set a route-specific key. The run button
+stays disabled until both routes have a model ID, base URL, and API key. The
+optional `file` provider is only for deliberate manual prompt/response hand-off.
+Set `PROMOFINDER_TOP_K` in `.env` to choose the default shortlist size. Refresh
+the Streamlit page after changing it to load the new default.
+
+In the Streamlit interface, **Force fresh generation** bypasses saved episode
+results and requests a fresh API response. It is available for API mode.
+
+The API key is read from `.env` and is never written into logs. Configure the
+candidate and ranking routes separately; either slot can point to a different
+OpenAI-compatible endpoint, including a Kuku API endpoint if it accepts the
+chat-completions request format. An endpoint with a different protocol needs a transport adapter in
+`src/promofinder/generation/llm_client.py`.
+
+```dotenv
+LLM_KEY=your-key
+
+CANDIDATE_PROVIDER=openai_compatible
+CANDIDATE_MODEL=z-ai/glm-5.3-flash
+CANDIDATE_BASE_URL=https://openrouter.ai/api/v1
+
+RANKING_PROVIDER=openai_compatible
+RANKING_MODEL=z-ai/glm-5.3-flash
+RANKING_BASE_URL=https://openrouter.ai/api/v1
+```
+
+## What the pipeline checks
+
+The parser uses the actual TXT format: episode headers, scene headings and
+time ranges, plus timestamped action, camera, sound and dialogue blocks. The
+model chooses block IDs rather than inventing cut timestamps. Python resolves
+those IDs into timestamps and checks the episode, order, duplicate/overlapping
+segments, hook position and 20–60 second duration. The duration is an estimate
+from screenplay timecodes and selected block boundaries; no video is available
+to verify the final edit. A separate semantic model checks source match, hook,
+cliffhanger and standalone clarity. Invalid candidates get one initial attempt
+and up to two correction attempts.
+
+The ranking model scores each validated promo from 0–5 on five criteria.
+Python applies the 30/25/20/15/10 weights, calculates the score out of 100,
+sorts the candidates, and selects the configured top K. Ranking sees only the
+selected transcript excerpts and promo metadata, not all episode scripts.
+
+## Outputs
+
+- `data/processed/promofinder.sqlite3`: runs, parsed episodes, candidates,
+  validation attempts/errors and rankings.
+- `data/outputs/candidates.json`: all candidate generation attempts and their
+  validation results for the latest run.
+- `data/outputs/valid_promos.json`, `failed_episodes.json`, `rankings.json`,
+  `rankings.csv`, `top_promos.json`, and `raw_llm_responses.jsonl`.
+- `reports/execution_report.json` and `execution_report.md`.
+- `data/prompts/pending_requests.jsonl` for the manual provider hand-off.
+
+Generated data, API logs, pending requests, local secrets, and Kuku source
+screenplays are excluded from Git. The original scripts and prior outputs are
+preserved under `legacy/previous_pipeline/`; they are not imported by the new
+pipeline.
+
+## Tests and notebook
+
+Run the unit and mocked end-to-end tests:
+
+```bash
+uv run pytest
+```
+
+The notebook at `notebooks/demo.ipynb` demonstrates screenplay upload, model
+configuration, and execution in Google Colab. Model credentials
+are requested interactively and are not stored in the notebook.
+
+The Streamlit studio lets you choose multiple screenplays from the input
+library or drag and drop TXT files, then sends only the selected files into
+the pipeline. Its Output tab lists the top K promos in rank order; selecting a
+promo shows its source segments, ranking metrics, and scoring explanation.
+The studio also provides manual response hand-off for model requests that
+use the optional `file` provider.
