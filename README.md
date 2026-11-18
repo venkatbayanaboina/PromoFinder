@@ -136,7 +136,7 @@ use the optional `file` provider.
 
 ![Screenshot 1](screenshots/Screenshot%202026-11-18%20at%2016.40.36.png)
 
-![Screenshot 2](screenshots/Screenshot%202026-11-18%20at%2016.40.48.png)
+
 
 ![Screenshot 3](screenshots/Screenshot%202026-11-18%20at%2016.41.08.png)
 
