@@ -131,3 +131,17 @@ the pipeline. Its Output tab lists the top K promos in rank order; selecting a
 promo shows its source segments, ranking metrics, and scoring explanation.
 The studio also provides manual response hand-off for model requests that
 use the optional `file` provider.
+
+## Application Screenshots
+
+![Screenshot 1](screenshots/Screenshot%202026-11-18%20at%2016.40.36.png)
+
+![Screenshot 2](screenshots/Screenshot%202026-11-18%20at%2016.40.48.png)
+
+![Screenshot 3](screenshots/Screenshot%202026-11-18%20at%2016.41.08.png)
+
+![Screenshot 4](screenshots/Screenshot%202026-11-18%20at%2016.41.27.png)
+
+![Screenshot 5](screenshots/Screenshot%202026-11-18%20at%2016.42.08.png)
+
+![Screenshot 6](screenshots/Screenshot%202026-11-18%20at%2016.42.21.png)
