@@ -1,6 +1,7 @@
 """OpenAI-compatible LLM transport with file hand-off and raw response logging."""
 import hashlib
 import json
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -8,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..utils.logger import get_logger
+
+_file_lock = threading.Lock()  # serialise concurrent JSONL appends across threads
 
 
 class LLMError(RuntimeError):
@@ -176,5 +179,6 @@ class LLMClient:
     @staticmethod
     def _append(path, record):
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with Path(path).open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(record, ensure_ascii=False) + "\n")
+        with _file_lock:
+            with Path(path).open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")

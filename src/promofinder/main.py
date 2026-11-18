@@ -3,8 +3,11 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import sys
+import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -159,9 +162,17 @@ def run_pipeline(settings=None, input_dir=None, top_k=None, force_reprocess=Fals
             generator, validation_engine, repository, settings.max_validation_retries,
             generation_config_sha256=generation_profile)
 
-        for index, episode in enumerate(episodes, 1):
-            notify("generation", index - 1, len(episodes),
-                   "Selecting a promo for {}".format(episode.episode_id))
+        # --- Parallel episode generation -------------------------------------------
+        # Each episode's LLM calls (generate + semantic-validate) are independent.
+        # We run up to PROMOFINDER_WORKERS episodes concurrently (default 5) so the
+        # pipeline is not bottlenecked by sequential round-trips to the API.
+        num_workers = max(1, int(os.environ.get("PROMOFINDER_WORKERS", "5")))
+        episode_results = [None] * len(episodes)   # pre-sized; filled by index
+        _outcomes_lock = threading.Lock()
+        completed_count = [0]                       # mutable int for closure
+
+        def _process_episode(ep_index_episode):
+            ep_index, episode = ep_index_episode
             old_hash, old_profile = repository.cache_signature_for_episode(episode.episode_id)
             if (force_reprocess or (old_hash and old_hash != episode.source_sha256)
                     or (old_hash and old_profile != generation_profile)):
@@ -172,23 +183,40 @@ def run_pipeline(settings=None, input_dir=None, top_k=None, force_reprocess=Fals
                 repository.save_episode_outcome(
                     episode, reusable["status"], run_id, reusable["attempt_count"],
                     reusable["errors"], generation_profile)
-                outcomes.append({"episode": episode, "status": reusable["status"],
-                                 "promo": reusable["promo"], "attempts": 0,
-                                 "errors": reusable["errors"], "reused": True})
-                notify("generation", index, len(episodes),
-                       "{} reused from the same model profile".format(episode.episode_id))
-                continue
-
+                return ep_index, {
+                    "episode": episode, "status": reusable["status"],
+                    "promo": reusable["promo"], "attempts": 0,
+                    "errors": reusable["errors"], "reused": True,
+                }, 0
             repository.upsert_episode(episode, run_id=run_id, status="parsed",
                                       generation_config_sha256=generation_profile)
             result = retry_handler.generate_valid_promo(episode, run_id)
-            attempt_count += result.attempts
-            outcomes.append({"episode": episode, "status": result.status,
-                             "promo": result.promo, "attempts": result.attempts,
-                             "errors": result.errors,
-                             "no_candidate_reason": result.no_candidate_reason})
-            notify("generation", index, len(episodes),
-                   "{}: {}".format(episode.episode_id, result.status))
+            return ep_index, {
+                "episode": episode, "status": result.status,
+                "promo": result.promo, "attempts": result.attempts,
+                "errors": result.errors,
+                "no_candidate_reason": result.no_candidate_reason,
+            }, result.attempts
+
+        notify("generation", 0, len(episodes), "Starting {} workers".format(num_workers))
+        with ThreadPoolExecutor(max_workers=num_workers) as pool:
+            futures = {
+                pool.submit(_process_episode, (i, ep)): ep
+                for i, ep in enumerate(episodes)
+            }
+            for future in as_completed(futures):
+                ep_index, outcome, ep_attempts = future.result()
+                episode_results[ep_index] = outcome
+                with _outcomes_lock:
+                    attempt_count += ep_attempts
+                    completed_count[0] += 1
+                    done = completed_count[0]
+                notify("generation", done, len(episodes),
+                       "{}: {}".format(outcome["episode"].episode_id,
+                                       "reused" if outcome.get("reused") else outcome["status"]))
+
+        outcomes = [r for r in episode_results if r is not None]
+        # ---------------------------------------------------------------------------
 
         valid_candidates = [item["promo"] for item in outcomes
                             if item.get("status") == "valid" and item.get("promo")]

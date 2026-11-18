@@ -1,5 +1,7 @@
 """Ask a ranking model to score each valid promo, then calculate totals in Python."""
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ..utils.json_utils import extract_json
 from ..generation.llm_client import PendingResponse
@@ -19,34 +21,52 @@ class RankingEngine:
 
     def rank_all(self, candidates, episodes, run_id, progress_callback=None):
         episode_by_id = {episode.episode_id: episode for episode in episodes}
-        rankings = []
+        rankings = [None] * len(candidates)
         errors = []
-        for index, candidate in enumerate(candidates, 1):
+        num_workers = max(1, int(os.environ.get("PROMOFINDER_WORKERS", "5")))
+
+        def _rank_one(idx_candidate):
+            idx, candidate = idx_candidate
             episode = episode_by_id.get(candidate.episode_id)
             if episode is None:
-                errors.append({"promo_id": candidate.promo_id,
-                               "error": "source episode is missing"})
-                continue
+                return idx, None, {"promo_id": candidate.promo_id,
+                                   "error": "source episode is missing"}
             prompt = build_ranking_prompt(
                 candidate, episode, self.settings.prompts_dir,
                 self.settings.scoring_weights)
-            try:
-                raw = self.llm_client.complete(
-                    prompt=prompt, stage="ranking", key=candidate.promo_id,
-                    attempt=0, model_settings=self.settings.ranking_model)
-                ranking = validate_ranking(
-                    extract_json(raw), candidate.promo_id, candidate.episode_id,
-                    self.settings.scoring_weights)
-                rankings.append(ranking)
-            except PendingResponse:
-                raise
-            except Exception as exc:
-                logger.exception("Could not rank %s", candidate.promo_id)
-                errors.append({"promo_id": candidate.promo_id, "error": str(exc)})
-            if progress_callback:
-                progress_callback(index, len(candidates), candidate.promo_id)
+            raw = self.llm_client.complete(
+                prompt=prompt, stage="ranking", key=candidate.promo_id,
+                attempt=0, model_settings=self.settings.ranking_model)
+            ranking = validate_ranking(
+                extract_json(raw), candidate.promo_id, candidate.episode_id,
+                self.settings.scoring_weights)
+            return idx, ranking, None
 
-        ordered = sort_and_assign_rank(rankings)
+        with ThreadPoolExecutor(max_workers=num_workers) as pool:
+            futures = {
+                pool.submit(_rank_one, (i, c)): c
+                for i, c in enumerate(candidates)
+            }
+            done_count = 0
+            for future in as_completed(futures):
+                candidate = futures[future]
+                done_count += 1
+                try:
+                    idx, ranking, error = future.result()
+                    if error:
+                        errors.append(error)
+                    else:
+                        rankings[idx] = ranking
+                except PendingResponse:
+                    raise
+                except Exception as exc:
+                    logger.exception("Could not rank %s", candidate.promo_id)
+                    errors.append({"promo_id": candidate.promo_id, "error": str(exc)})
+                if progress_callback:
+                    progress_callback(done_count, len(candidates), candidate.promo_id)
+
+        ordered = sort_and_assign_rank([r for r in rankings if r is not None])
         for item in ordered:
             self.repository.save_ranking(item, run_id)
         return ordered, errors
+
