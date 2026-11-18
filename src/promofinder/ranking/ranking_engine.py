@@ -39,7 +39,9 @@ class RankingEngine:
                 attempt=0, model_settings=self.settings.ranking_model)
             ranking = validate_ranking(
                 extract_json(raw), candidate.promo_id, candidate.episode_id,
-                self.settings.scoring_weights)
+                self.settings.scoring_weights,
+                segments=candidate.segments,
+                duration_seconds=candidate.duration_seconds)
             return idx, ranking, None
 
         with ThreadPoolExecutor(max_workers=num_workers) as pool:

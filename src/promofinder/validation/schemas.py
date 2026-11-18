@@ -119,6 +119,8 @@ class PromoRanking(StrictModel):
     ranking_reason: str
     weaknesses: List[str] = Field(default_factory=list)
     rank: int = Field(ge=1)
+    segments: List[PromoSegment] = Field(default_factory=list)
+    duration_seconds: float = Field(default=0.0, ge=0)
 
 
 class ExecutionRun(StrictModel):

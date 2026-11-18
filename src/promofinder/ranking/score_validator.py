@@ -17,10 +17,13 @@ def calculate_weighted_total(scores: RankingScores, weights: Dict[str, int]) -> 
     return round(sum((values[key] / 5.0) * weight for key, weight in weights.items()), 2)
 
 
-def validate_ranking(payload, promo_id, episode_id, weights, rank=1):
+def validate_ranking(payload, promo_id, episode_id, weights, rank=1,
+                     segments=None, duration_seconds=0.0):
     scores = RankingScores.model_validate(payload)
     total = calculate_weighted_total(scores, weights)
     return PromoRanking(
         promo_id=promo_id, episode_id=episode_id, scores=scores,
         total_score=total, ranking_reason=scores.justification,
-        weaknesses=scores.weaknesses, rank=rank)
+        weaknesses=scores.weaknesses, rank=rank,
+        segments=segments or [],
+        duration_seconds=duration_seconds)
